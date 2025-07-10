@@ -1,4 +1,4 @@
-# Kenya Scraper Hub - Setup Instructions
+# WebExtract-Pro - Setup Instructions
 
 ## Overview
 A comprehensive web scraping platform that manages Jumia and Kilimall scrapers with user authentication, task management, and real-time monitoring.
