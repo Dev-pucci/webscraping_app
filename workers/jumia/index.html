@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jumia Scraper</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-out;
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+        }
+        
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        
+        .card-hover:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Simple icons as SVG components
+        const SearchIcon = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        );
+
+        const DownloadIcon = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+        );
+
+        const ShoppingBagIcon = () => (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l-1 12H6L5 9z" />
+            </svg>
+        );
+
+        const ExternalLinkIcon = () => (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+        );
+
+        const CheckIcon = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+        );
+
+        const ErrorIcon = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        );
+
+        const ClockIcon = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        );
+
+        const FilterIcon = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z" />
+            </svg>
+        );
+
+        const API_BASE_URL = 'http://127.0.0.1:5000';
+
+        const JumiaScraperApp = () => {
+            const [searchQuery, setSearchQuery] = useState('');
+            const [categoryUrl, setCategoryUrl] = useState('');
+            const [maxPages, setMaxPages] = useState(3);
+            const [searchType, setSearchType] = useState('search');
+            const [error, setError] = useState('');
+            
+            // Task management
+            const [currentTask, setCurrentTask] = useState(null);
+            const [taskStatus, setTaskStatus] = useState(null);
+            const [products, setProducts] = useState([]);
+            const [statistics, setStatistics] = useState(null);
+            const [allTasks, setAllTasks] = useState([]);
+            
+            // UI state
+            const [isLoading, setIsLoading] = useState(false);
+            const [showResults, setShowResults] = useState(false);
+            const [activeTab, setActiveTab] = useState('scraper');
+            
+            const pollIntervalRef = useRef(null);
+
+            useEffect(() => {
+                loadAllTasks();
+                return () => {
+                    if (pollIntervalRef.current) {
+                        clearInterval(pollIntervalRef.current);
+                    }
+                };
+            }, []);
+
+            const loadAllTasks = async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/tasks`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        setAllTasks(data.tasks || []);
+                    }
+                } catch (error) {
+                    console.error('Error loading tasks:', error);
+                }
+            };
+
+            const startScraping = async () => {
+                if (!searchQuery && !categoryUrl) {
+                    setError('Please enter a search query or category URL');
+                    return;
+                }
+
+                setIsLoading(true);
+                setError('');
+                setProducts([]);
+                setStatistics(null);
+                setShowResults(false);
+                
+                try {
+                    const payload = {
+                        pages: maxPages
+                    };
+
+                    if (searchType === 'search') {
+                        payload.search = searchQuery;
+                    } else {
+                        payload.categoryUrl = categoryUrl;
+                    }
+
+                    const response = await fetch(`${API_BASE_URL}/api/scrape`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.task_id) {
+                        setCurrentTask(data.task_id);
+                        setTaskStatus({
+                            status: 'running',
+                            progress: 0,
+                            message: 'Starting scraper...'
+                        });
+                        
+                        // Start polling for task status
+                        startPolling(data.task_id);
+                    } else {
+                        setError('Failed to start scraping task');
+                        setIsLoading(false);
+                    }
+                    
+                } catch (err) {
+                    setError(`Error: ${err.message}. Make sure the API server is running on ${API_BASE_URL}`);
+                    setIsLoading(false);
+                }
+            };
+
+            const startPolling = (taskId) => {
+                if (pollIntervalRef.current) {
+                    clearInterval(pollIntervalRef.current);
+                }
+
+                pollIntervalRef.current = setInterval(async () => {
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/api/task/${taskId}`);
+                        
+                        if (!response.ok) {
+                            throw new Error('Failed to get task status');
+                        }
+
+                        const data = await response.json();
+                        setTaskStatus(data);
+
+                        if (data.status === 'completed') {
+                            setProducts(data.products || []);
+                            calculateStatistics(data.products || []);
+                            setShowResults(true);
+                            setIsLoading(false);
+                            clearInterval(pollIntervalRef.current);
+                            loadAllTasks(); // Refresh task list
+                        } else if (data.status === 'failed') {
+                            setError(data.error || 'Scraping failed');
+                            setIsLoading(false);
+                            clearInterval(pollIntervalRef.current);
+                            loadAllTasks(); // Refresh task list
+                        }
+                    } catch (error) {
+                        console.error('Error polling task status:', error);
+                        setError('Lost connection to scraping task');
+                        setIsLoading(false);
+                        clearInterval(pollIntervalRef.current);
+                    }
+                }, 2000); // Poll every 2 seconds
+            };
+
+            const calculateStatistics = (products) => {
+                const totalProducts = products.length;
+                const withPrices = products.filter(p => p.price && p.price !== 'N/A').length;
+                const withRatings = products.filter(p => p.rating && p.rating !== 'N/A').length;
+                const withImages = products.filter(p => p.image_url && p.image_url !== 'N/A').length;
+                
+                const brandCounts = {};
+                products.forEach(p => {
+                    if (p.brand && p.brand !== 'N/A') {
+                        brandCounts[p.brand] = (brandCounts[p.brand] || 0) + 1;
+                    }
+                });
+
+                setStatistics({
+                    total: totalProducts,
+                    priceSuccess: totalProducts > 0 ? Math.round((withPrices / totalProducts) * 100) : 0,
+                    ratingSuccess: totalProducts > 0 ? Math.round((withRatings / totalProducts) * 100) : 0,
+                    imageSuccess: totalProducts > 0 ? Math.round((withImages / totalProducts) * 100) : 0,
+                    topBrands: Object.entries(brandCounts)
+                        .sort(([,a], [,b]) => b - a)
+                        .slice(0, 5)
+                });
+            };
+
+            const downloadData = (format = 'json') => {
+                if (!products.length) return;
+
+                const dataStr = format === 'json' 
+                    ? JSON.stringify(products, null, 2)
+                    : convertToCSV(products);
+                
+                const dataBlob = new Blob([dataStr], { 
+                    type: format === 'json' ? 'application/json' : 'text/csv' 
+                });
+                const url = URL.createObjectURL(dataBlob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `jumia_products.${format}`;
+                link.click();
+                URL.revokeObjectURL(url);
+            };
+
+            const convertToCSV = (data) => {
+                if (!data.length) return '';
+                
+                const headers = Object.keys(data[0]);
+                const csvContent = [
+                    headers.join(','),
+                    ...data.map(row => 
+                        headers.map(header => 
+                            JSON.stringify(row[header] || '')
+                        ).join(',')
+                    )
+                ].join('\n');
+                
+                return csvContent;
+            };
+
+            const ProductCard = ({ product }) => (
+                <div className="bg-white rounded-xl shadow-lg card-hover border border-gray-100 overflow-hidden fade-in">
+                    <div className="relative">
+                        <img 
+                            src={product.image_url && product.image_url !== 'N/A' ? product.image_url : '/api/placeholder/300/200'} 
+                            alt={product.name}
+                            className="w-full h-48 object-cover bg-gray-50"
+                            onError={(e) => {
+                                e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDMwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIzMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMzAgODBIMTcwVjEyMEgxMzBWODBaIiBmaWxsPSIjRDFENURCIi8+PC9zdmc+';
+                            }}
+                        />
+                        {product.discount && product.discount !== 'N/A' && (
+                            <div className="absolute top-3 right-3 bg-gradient-to-r from-red-500 to-red-600 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
+                                -{product.discount}
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="p-5">
+                        <h3 className="font-semibold text-gray-800 text-sm mb-3 line-clamp-2 min-h-[2.5rem] leading-tight">
+                            {product.name}
+                        </h3>
+                        
+                        <div className="space-y-3 mb-4">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xl font-bold text-orange-600">{product.price}</span>
+                                {product.original_price && product.original_price !== 'N/A' && (
+                                    <span className="text-sm text-gray-500 line-through">{product.original_price}</span>
+                                )}
+                            </div>
+                            
+                            {product.rating && product.rating !== 'N/A' && (
+                                <div className="flex items-center space-x-2">
+                                    <div className="flex items-center">
+                                        <span className="text-yellow-500">⭐</span>
+                                        <span className="text-sm text-gray-600 ml-1">{product.rating}</span>
+                                    </div>
+                                    {product.reviews_count && (
+                                        <span className="text-xs text-gray-400">({product.reviews_count})</span>
+                                    )}
+                                </div>
+                            )}
+                            
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs bg-gradient-to-r from-orange-100 to-red-100 text-orange-800 px-3 py-1 rounded-full font-medium">
+                                    {product.brand}
+                                </span>
+                                {product.product_url && product.product_url !== 'N/A' && (
+                                    <a 
+                                        href={product.product_url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="text-orange-500 hover:text-orange-700 transition-colors p-1 hover:bg-orange-50 rounded"
+                                    >
+                                        <ExternalLinkIcon />
+                                    </a>
+                                )}
+                            </div>
+                            
+                            {product.shipping_info && product.shipping_info !== 'N/A' && (
+                                <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                                    {product.shipping_info}
+                                </div>
+                            )}
+                            
+                            {product.badges && product.badges.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                    {product.badges.slice(0, 2).map((badge, index) => (
+                                        <span key={index} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                                            {badge}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+
+            const TaskCard = ({ task }) => {
+                const getStatusIcon = (status) => {
+                    switch (status) {
+                        case 'completed':
+                            return <CheckIcon />;
+                        case 'failed':
+                            return <ErrorIcon />;
+                        case 'running':
+                            return <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>;
+                        default:
+                            return <ClockIcon />;
+                    }
+                };
+
+                const getStatusColor = (status) => {
+                    switch (status) {
+                        case 'completed':
+                            return 'text-green-600 bg-green-50';
+                        case 'failed':
+                            return 'text-red-600 bg-red-50';
+                        case 'running':
+                            return 'text-orange-600 bg-orange-50';
+                        default:
+                            return 'text-gray-600 bg-gray-50';
+                    }
+                };
+
+                return (
+                    <div className="bg-white rounded-lg shadow-md p-4 border border-gray-100">
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="text-sm font-mono text-gray-500">{task.task_id}</span>
+                            <div className={`flex items-center space-x-2 px-3 py-1 rounded-full ${getStatusColor(task.status)}`}>
+                                {getStatusIcon(task.status)}
+                                <span className="text-sm font-medium capitalize">{task.status}</span>
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                            <div className="text-sm">
+                                <span className="font-medium">Type:</span> {task.task_type}
+                            </div>
+                            <div className="text-sm">
+                                <span className="font-medium">Started:</span> {new Date(task.started_at).toLocaleString()}
+                            </div>
+                            {task.completed_at && (
+                                <div className="text-sm">
+                                    <span className="font-medium">Duration:</span> {task.duration}
+                                </div>
+                            )}
+                            {task.product_count && (
+                                <div className="text-sm">
+                                    <span className="font-medium">Products:</span> {task.product_count}
+                                </div>
+                            )}
+                            {task.error && (
+                                <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                                    <span className="font-medium">Error:</span> {task.error}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-orange-50">
+                    {/* Header */}
+                    <header className="gradient-bg shadow-xl">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                            <div className="flex items-center space-x-4">
+                                <div className="p-3 bg-white bg-opacity-20 rounded-xl backdrop-blur-sm">
+                                    <ShoppingBagIcon />
+                                </div>
+                                <div>
+                                    <h1 className="text-3xl font-bold text-white">Jumia Scraper</h1>
+                                    <p className="text-orange-100 mt-1">Extract product data from Jumia Kenya</p>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Navigation Tabs */}
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+                        <div className="flex space-x-1 bg-white rounded-lg p-1 shadow-md mb-6">
+                            <button
+                                onClick={() => setActiveTab('scraper')}
+                                className={`flex-1 py-3 px-4 rounded-md font-medium transition-all duration-200 ${
+                                    activeTab === 'scraper' 
+                                        ? 'bg-orange-500 text-white shadow-md' 
+                                        : 'text-gray-600 hover:text-orange-600 hover:bg-gray-50'
+                                }`}
+                            >
+                                Scraper
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('tasks')}
+                                className={`flex-1 py-3 px-4 rounded-md font-medium transition-all duration-200 ${
+                                    activeTab === 'tasks' 
+                                        ? 'bg-orange-500 text-white shadow-md' 
+                                        : 'text-gray-600 hover:text-orange-600 hover:bg-gray-50'
+                                }`}
+                            >
+                                Tasks ({allTasks.length})
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
+                        {activeTab === 'scraper' && (
+                            <>
+                                {/* Search Controls */}
+                                <div className="bg-white rounded-2xl shadow-xl p-8 mb-8 border border-gray-100">
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                        {/* Search Type Toggle */}
+                                        <div className="space-y-6">
+                                            <div className="flex space-x-2 bg-gray-100 rounded-xl p-1">
+                                                <button
+                                                    onClick={() => setSearchType('search')}
+                                                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
+                                                        searchType === 'search' 
+                                                            ? 'bg-white text-orange-600 shadow-md' 
+                                                            : 'text-gray-600 hover:text-orange-600'
+                                                    }`}
+                                                >
+                                                    <SearchIcon />
+                                                    <span>Search Products</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => setSearchType('category')}
+                                                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
+                                                        searchType === 'category' 
+                                                            ? 'bg-white text-orange-600 shadow-md' 
+                                                            : 'text-gray-600 hover:text-orange-600'
+                                                    }`}
+                                                >
+                                                    <FilterIcon />
+                                                    <span>Category URL</span>
+                                                </button>
+                                            </div>
+
+                                            {searchType === 'search' ? (
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                                        Search Query
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={searchQuery}
+                                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                                        placeholder="e.g., smartphone, laptop, headphones"
+                                                        className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-200"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                                        Category URL
+                                                    </label>
+                                                    <input
+                                                        type="url"
+                                                        value={categoryUrl}
+                                                        onChange={(e) => setCategoryUrl(e.target.value)}
+                                                        placeholder="https://www.jumia.co.ke/phones/"
+                                                        className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-200"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Options */}
+                                        <div className="space-y-6">
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                                    Pages to Scrape
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    value={maxPages}
+                                                    onChange={(e) => setMaxPages(parseInt(e.target.value))}
+                                                    min="1"
+                                                    max="10"
+                                                    className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-200"
+                                                />
+                                                <p className="text-sm text-gray-500 mt-2">
+                                                    More pages = more products but longer scraping time
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {error && (
+                                        <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
+                                            {error}
+                                        </div>
+                                    )}
+
+                                    {/* Progress Bar */}
+                                    {isLoading && taskStatus && (
+                                        <div className="mt-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-sm font-medium text-orange-700">
+                                                    {taskStatus.status === 'running' ? 'Scraping in progress...' : taskStatus.status}
+                                                </span>
+                                                <span className="text-sm text-orange-600">
+                                                    {taskStatus.progress || 0}%
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-orange-200 rounded-full h-2">
+                                                <div 
+                                                    className="bg-orange-600 h-2 rounded-full progress-bar"
+                                                    style={{ width: `${taskStatus.progress || 0}%` }}
+                                                ></div>
+                                            </div>
+                                            {taskStatus.message && (
+                                                <p className="text-sm text-orange-600 mt-2">{taskStatus.message}</p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="mt-8 flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+                                        <button
+                                            onClick={startScraping}
+                                            disabled={isLoading}
+                                            className="flex-1 bg-gradient-to-r from-orange-600 to-red-600 text-white py-4 px-8 rounded-xl font-semibold hover:from-orange-700 hover:to-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-3 shadow-lg"
+                                        >
+                                            {isLoading ? (
+                                                <>
+                                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                    <span>Scraping...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <SearchIcon />
+                                                    <span>Start Scraping</span>
+                                                </>
+                                            )}
+                                        </button>
+
+                                        {products.length > 0 && (
+                                            <>
+                                                <button
+                                                    onClick={() => downloadData('json')}
+                                                    className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white py-4 px-6 rounded-xl font-semibold hover:from-indigo-600 hover:to-indigo-700 transition-all duration-200 flex items-center space-x-2 shadow-lg"
+                                                >
+                                                    <DownloadIcon />
+                                                    <span>JSON</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => downloadData('csv')}
+                                                    className="bg-gradient-to-r from-teal-500 to-teal-600 text-white py-4 px-6 rounded-xl font-semibold hover:from-teal-600 hover:to-teal-700 transition-all duration-200 flex items-center space-x-2 shadow-lg"
+                                                >
+                                                    <DownloadIcon />
+                                                    <span>CSV</span>
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Statistics */}
+                                {statistics && showResults && (
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                                        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+                                            <div className="flex items-center">
+                                                <div className="p-3 bg-orange-100 rounded-xl">
+                                                    <ShoppingBagIcon />
+                                                </div>
+                                                <div className="ml-4">
+                                                    <p className="text-sm font-medium text-gray-500">Total Products</p>
+                                                    <p className="text-3xl font-bold text-gray-900">{statistics.total}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+                                            <div className="flex items-center">
+                                                <div className="p-3 bg-green-100 rounded-xl">
+                                                    <CheckIcon />
+                                                </div>
+                                                <div className="ml-4">
+                                                    <p className="text-sm font-medium text-gray-500">Price Success</p>
+                                                    <p className="text-3xl font-bold text-gray-900">{statistics.priceSuccess}%</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+                                            <div className="flex items-center">
+                                                <div className="p-3 bg-yellow-100 rounded-xl">
+                                                    <span className="text-yellow-600">⭐</span>
+                                                </div>
+                                                <div className="ml-4">
+                                                    <p className="text-sm font-medium text-gray-500">Rating Success</p>
+                                                    <p className="text-3xl font-bold text-gray-900">{statistics.ratingSuccess}%</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+                                            <div className="flex items-center">
+                                                <div className="p-3 bg-purple-100 rounded-xl">
+                                                    <span className="text-purple-600">🖼️</span>
+                                                </div>
+                                                <div className="ml-4">
+                                                    <p className="text-sm font-medium text-gray-500">Image Success</p>
+                                                    <p className="text-3xl font-bold text-gray-900">{statistics.imageSuccess}%</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Top Brands */}
+                                {statistics && statistics.topBrands.length > 0 && showResults && (
+                                    <div className="bg-white rounded-xl shadow-lg p-6 mb-8 border border-gray-100">
+                                        <h3 className="text-xl font-bold text-gray-900 mb-6">Top Brands Found</h3>
+                                        <div className="flex flex-wrap gap-3">
+                                            {statistics.topBrands.map(([brand, count], index) => (
+                                                <div key={index} className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-full px-5 py-2">
+                                                    <span className="font-semibold text-orange-800">{brand}</span>
+                                                    <span className="text-orange-600 ml-2">({count})</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Products Grid */}
+                                {products.length > 0 && showResults && (
+                                    <div>
+                                        <div className="flex items-center justify-between mb-8">
+                                            <h2 className="text-2xl font-bold text-gray-900">
+                                                Scraped Products ({products.length})
+                                            </h2>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                            {products.map((product, index) => (
+                                                <ProductCard key={index} product={product} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Empty State */}
+                                {!isLoading && products.length === 0 && !showResults && (
+                                    <div className="text-center py-16">
+                                        <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md mx-auto">
+                                            <ShoppingBagIcon />
+                                            <h3 className="text-xl font-semibold text-gray-900 mb-3">Ready to Scrape</h3>
+                                            <p className="text-gray-600 mb-6">Enter a search term or category URL to start scraping products from Jumia Kenya</p>
+                                            <div className="text-sm text-gray-500">
+                                                <p>Popular searches: smartphone, laptop, headphones, shoes</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        )}
+
+                        {activeTab === 'tasks' && (
+                            <div>
+                                <div className="flex items-center justify-between mb-8">
+                                    <h2 className="text-2xl font-bold text-gray-900">
+                                        Scraping Tasks ({allTasks.length})
+                                    </h2>
+                                    <button
+                                        onClick={loadAllTasks}
+                                        className="bg-orange-500 text-white py-2 px-4 rounded-lg font-medium hover:bg-orange-600 transition-colors"
+                                    >
+                                        Refresh
+                                    </button>
+                                </div>
+
+                                {allTasks.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {allTasks.map((task, index) => (
+                                            <TaskCard key={task.task_id || index} task={task} />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-16">
+                                        <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md mx-auto">
+                                            <ClockIcon />
+                                            <h3 className="text-xl font-semibold text-gray-900 mb-3">No Tasks Yet</h3>
+                                            <p className="text-gray-600">Start a scraping task to see it listed here</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(React.createElement(JumiaScraperApp), document.getElementById('root'));
+    </script>
+</body>
+</html>
