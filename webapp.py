@@ -56,7 +56,7 @@ def initialize_database():
                 admin.set_password('admin123')
                 db.session.add(admin)
                 db.session.commit()
-                print("✅ Admin user created: admin@webextract-pro.com / admin123")
+                print("[OK] Admin user created: admin@webextract-pro.com / admin123")
         app.db_initialized = True
 
 @app.route('/')
@@ -66,7 +66,7 @@ def home():
         # Check if the file exists first
         frontend_path = os.path.join(current_dir, 'webextract-pro.html')
         if not os.path.exists(frontend_path):
-            print(f"❌ webextract-pro.html not found at: {frontend_path}")
+            print(f"[ERROR] webextract-pro.html not found at: {frontend_path}")
             raise FileNotFoundError("Frontend file not found")
         
         # Create response with proper headers
@@ -78,11 +78,11 @@ def home():
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
         
-        print(f"✅ Serving webextract-pro.html from: {frontend_path}")
+        print(f"[OK] Serving webextract-pro.html from: {frontend_path}")
         return response
         
     except FileNotFoundError:
-        print("⚠️ webextract-pro.html not found - serving fallback interface")
+        print("[WARN] webextract-pro.html not found - serving fallback interface")
         # Fallback if webextract-pro.html doesn't exist
         fallback_html = """
         <!DOCTYPE html>
@@ -135,7 +135,7 @@ def home():
         </head>
         <body>
             <div class="container">
-                <h1>🚀 WebExtract Pro</h1>
+                <h1>[START] WebExtract Pro</h1>
                 <div class="error">
                     <h3>Frontend File Missing</h3>
                     <p><strong>webextract-pro.html</strong> not found in the root directory.</p>
@@ -144,9 +144,9 @@ def home():
                 </div>
                 <div class="info">
                     <h3>System Status</h3>
-                    <p>✅ WebExtract Pro backend is running on port 8000</p>
+                    <p>[OK] WebExtract Pro backend is running on port 8000</p>
                     <p>🔗 API endpoints are available</p>
-                    <p>💾 Database is operational</p>
+                    <p>[DATABASE] Database is operational</p>
                 </div>
                 <div>
                     <a href="/api/health" class="btn">Health Check</a>
@@ -482,21 +482,21 @@ def handle_preflight():
         return response
 
 if __name__ == '__main__':
-    print("🚀 Starting WebExtract Pro...")
-    print("📊 Dashboard: http://127.0.0.1:8000")
-    print("🎨 Frontend: webextract-pro.html")
-    print("👤 Admin Login: admin@webextract-pro.com / admin123")
-    print("💾 Database: webextract_pro.db")
+    print("[START] Starting WebExtract Pro...")
+    print("[DASHBOARD] Dashboard: http://127.0.0.1:8000")
+    print("[FRONTEND] Frontend: webextract-pro.html")
+    print("[ADMIN] Admin Login: admin@webextract-pro.com / admin123")
+    print("[DATABASE] Database: webextract_pro.db")
     
     # Check if frontend file exists
     frontend_path = os.path.join(current_dir, 'webextract-pro.html')
     if os.path.exists(frontend_path):
-        print("✅ webextract-pro.html found")
+        print("[OK] webextract-pro.html found")
     else:
-        print("⚠️ webextract-pro.html not found - using fallback interface")
+        print("[WARN] webextract-pro.html not found - using fallback interface")
     
     # Print debug info
-    print(f"📁 Current directory: {current_dir}")
-    print(f"📄 Files in directory: {os.listdir(current_dir)}")
+    print(f"[FOLDER] Current directory: {current_dir}")
+    print(f"[FILES] Files in directory: {os.listdir(current_dir)}")
     
     app.run(host='127.0.0.1', port=8000, debug=True)

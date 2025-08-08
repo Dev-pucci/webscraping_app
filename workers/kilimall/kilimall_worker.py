@@ -23,10 +23,10 @@ sys.path.insert(0, parent_dir)
 try:
     from shared_db import db, User, ScrapingSession, DatabaseManager
     SHARED_DB_AVAILABLE = True
-    print("✅ shared_db imported successfully")
+    print("[OK] shared_db imported successfully")
 except ImportError:
     SHARED_DB_AVAILABLE = False
-    print("⚠️ shared_db not available - running in standalone mode")
+    print("[WARN] shared_db not available - running in standalone mode")
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'webextract-pro-kilimall-worker-2025'
@@ -36,9 +36,9 @@ CORS(app)
 if SHARED_DB_AVAILABLE:
     try:
         DatabaseManager.init_app(app)
-        print("✅ Database initialized")
+        print("[OK] Database initialized")
     except Exception as e:
-        print(f"⚠️ Database initialization failed: {e}")
+        print(f"[WARN] Database initialization failed: {e}")
         SHARED_DB_AVAILABLE = False
 
 # Import your existing scraper
@@ -49,17 +49,167 @@ try:
     # Import your KilimallScraper class
     from kilimall_scraper import KilimallScraper
     SCRAPER_AVAILABLE = True
-    print("✅ KilimallScraper class imported successfully")
-    print("✅ Your trained Selenium-based scraper is ready")
-    print("✅ Using exact selectors from real Kilimall HTML analysis")
+    print("[OK] KilimallScraper class imported successfully")
+    print("[OK] Your trained Selenium-based scraper is ready")
+    print("[OK] Using exact selectors from real Kilimall HTML analysis")
 except ImportError as e:
-    print(f"⚠️ Could not import KilimallScraper: {e}")
-    print("⚠️ Make sure kilimall_scraper.py is in the workers/kilimall/ directory")
+    print(f"[WARN] Could not import KilimallScraper: {e}")
+    print("[WARN] Make sure kilimall_scraper.py is in the workers/kilimall/ directory")
 
 # Active tasks storage - Fixed to prevent memory leaks
 active_tasks = {}
 task_history = []
 task_lock = threading.Lock()  # Thread safety
+
+def create_scraping_session(user_id, worker_type, task_id, search_query=None, category_url=None):
+    """Create a new scraping session in the database"""
+    if not SHARED_DB_AVAILABLE:
+        return None
+    
+    try:
+        with app.app_context():  # Ensure we have app context
+            session = ScrapingSession(
+                user_id=user_id,
+                worker_type=worker_type,
+                task_id=task_id,
+                status='running',
+                search_query=search_query,
+                category_url=category_url,
+                progress=0,
+                message='Initializing...'
+            )
+            db.session.add(session)
+            db.session.commit()
+            
+            print(f"[OK] Created ScrapingSession record: {session.id} for task {task_id}")
+            return session
+    except Exception as e:
+        print(f"[ERROR] Error creating ScrapingSession: {e}")
+        db.session.rollback()
+        return None
+
+def update_scraping_session_safe(task_id, **kwargs):
+    """Thread-safe update function that creates its own app context"""
+    if not SHARED_DB_AVAILABLE:
+        return
+    
+    def do_update():
+        try:
+            session = ScrapingSession.query.filter_by(task_id=task_id).first()
+            if session:
+                # Only update fields that exist in the model
+                valid_fields = ['progress', 'message', 'products_found', 'pages_scraped', 'status']
+                
+                for key, value in kwargs.items():
+                    if key in valid_fields and hasattr(session, key):
+                        setattr(session, key, value)
+                        print(f"[OK] Setting {key} = {value} for task {task_id}")
+                
+                db.session.commit()
+                print(f"[OK] Updated ScrapingSession for task {task_id}")
+            else:
+                print(f"[ERROR] No session found for task_id: {task_id}")
+        except Exception as e:
+            print(f"[ERROR] Error updating ScrapingSession for task {task_id}: {e}")
+            try:
+                db.session.rollback()
+            except:
+                pass
+    
+    # Run the update with proper app context
+    with app.app_context():
+        do_update()
+
+def complete_scraping_session_safe(task_id, products_data, status='completed', error_message=None):
+    """Thread-safe completion function that creates its own app context"""
+    if not SHARED_DB_AVAILABLE:
+        return
+    
+    def do_complete():
+        try:
+            session = ScrapingSession.query.filter_by(task_id=task_id).first()
+            if session:
+                session.status = status
+                session.completed_at = datetime.utcnow()
+                session.progress = 100 if status == 'completed' else session.progress
+                
+                if products_data:
+                    session.products_found = len(products_data)
+                    
+                    # Convert products to JSON-serializable format
+                    if isinstance(products_data, list):
+                        # Convert Product objects to dictionaries if needed
+                        json_products = []
+                        for product in products_data:
+                            if hasattr(product, '__dict__'):
+                                # Convert dataclass/object to dict
+                                product_dict = {
+                                    'name': getattr(product, 'name', 'N/A'),
+                                    'price': getattr(product, 'price', 'N/A'),
+                                    'original_price': getattr(product, 'original_price', 'N/A'),
+                                    'discount': getattr(product, 'discount', 'N/A'),
+                                    'rating': getattr(product, 'rating', 'N/A'),
+                                    'reviews_count': getattr(product, 'reviews_count', 'N/A'),
+                                    'image_url': getattr(product, 'image_url', 'N/A'),
+                                    'product_url': getattr(product, 'product_url', 'N/A'),
+                                    'brand': getattr(product, 'brand', 'N/A'),
+                                    'category': getattr(product, 'category', 'N/A'),
+                                    'shipping_info': getattr(product, 'shipping_info', 'N/A'),
+                                    'badges': getattr(product, 'badges', [])
+                                }
+                                json_products.append(product_dict)
+                            else:
+                                # Already a dict
+                                json_products.append(product)
+                        
+                        session.products_data = json.dumps(json_products)
+                    else:
+                        session.products_data = str(products_data)
+                
+                if error_message:
+                    session.error_message = error_message
+                    session.message = f"Failed: {error_message}"
+                else:
+                    session.message = f"Completed successfully - {len(products_data) if products_data else 0} products"
+                
+                db.session.commit()
+                print(f"[OK] Completed ScrapingSession for task {task_id}: {status} with {len(products_data) if products_data else 0} products")
+            else:
+                print(f"[ERROR] No session found for task_id: {task_id}")
+        except Exception as e:
+            print(f"[ERROR] Error completing ScrapingSession for task {task_id}: {e}")
+            try:
+                db.session.rollback()
+            except:
+                pass
+    
+    # Run the completion with proper app context
+    with app.app_context():
+        do_complete()
+
+def test_database_update(task_id):
+    """Test function to verify database updates work"""
+    if not SHARED_DB_AVAILABLE:
+        print("Database not available")
+        return
+    
+    try:
+        with app.app_context():
+            session = ScrapingSession.query.filter_by(task_id=task_id).first()
+            if session:
+                print(f"Found session: {session.id}")
+                print(f"Current progress: {session.progress}")
+                print(f"Current message: {session.message}")
+                
+                # Test update
+                session.progress = 50
+                session.message = "Test update"
+                db.session.commit()
+                print("[OK] Test update successful")
+            else:
+                print(f"[ERROR] No session found for task_id: {task_id}")
+    except Exception as e:
+        print(f"[ERROR] Test update failed: {e}")
 
 @app.route('/')
 def home():
@@ -79,14 +229,14 @@ def home():
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
             
-            print(f"✅ Successfully served kilimall_frontend.html ({len(html_content)} chars)")
+            print(f"[OK] Successfully served kilimall_frontend.html ({len(html_content)} chars)")
             return response
         else:
-            print(f"⚠️ kilimall_frontend.html not found at: {frontend_path}")
+            print(f"[WARN] kilimall_frontend.html not found at: {frontend_path}")
             return serve_fallback_html()
             
     except Exception as e:
-        print(f"❌ Error serving HTML: {e}")
+        print(f"[ERROR] Error serving HTML: {e}")
         return serve_fallback_html()
 
 def serve_fallback_html():
@@ -144,18 +294,18 @@ def serve_fallback_html():
     </head>
     <body>
         <div class="container">
-            <h1>🛒 Kilimall Worker - WebExtract Pro</h1>
+            <h1>[KILIMALL] Kilimall Worker - WebExtract Pro</h1>
             <div class="error">
-                <h3>⚠️ Frontend Issue</h3>
+                <h3>[WARN] Frontend Issue</h3>
                 <p>The <strong>kilimall_frontend.html</strong> file couldn't be loaded properly.</p>
                 <p>Using fallback interface instead.</p>
             </div>
             <div class="status">
-                <h3>✅ Worker Status</h3>
-                <p>✅ Kilimall Worker is running on port 5001</p>
-                <p>✅ Flask application is working</p>
-                <p>✅ API endpoints are available</p>
-                <p>{'✅ KilimallScraper loaded' if SCRAPER_AVAILABLE else '❌ KilimallScraper not found'}</p>
+                <h3>[OK] Worker Status</h3>
+                <p>[OK] Kilimall Worker is running on port 5001</p>
+                <p>[OK] Flask application is working</p>
+                <p>[OK] API endpoints are available</p>
+                <p>{'[OK] KilimallScraper loaded' if SCRAPER_AVAILABLE else '[ERROR] KilimallScraper not found'}</p>
             </div>
             <div>
                 <a href="/api/health" class="btn">Health Check</a>
@@ -221,9 +371,9 @@ def test_route():
     </head>
     <body>
         <div class="container">
-            <h1>✅ Kilimall Worker HTML Test</h1>
+            <h1>[OK] Kilimall Worker HTML Test</h1>
             <div class="success">
-                <h3>✅ Success!</h3>
+                <h3>[OK] Success!</h3>
                 <p>HTML serving is working correctly!</p>
                 <p>Flask can serve HTML with proper headers.</p>
             </div>
@@ -337,6 +487,15 @@ def scrape_products():
                 'success': False,
                 'error': 'Please provide either search query or category URL'
             }), 400
+        
+        # CREATE DATABASE RECORD
+        create_scraping_session(
+            user_id=1,  # Default to admin user
+            worker_type='kilimall',
+            task_id=task_id,
+            search_query=search_query,
+            category_url=category_url
+        )
         
         # Initialize task with thread safety
         with task_lock:
@@ -619,6 +778,14 @@ def run_kilimall_scraper(task_id, search_query, category_url, max_pages, scrape_
                     logger.info(f"Task {task_id}: {progress}% - {message}")
         except Exception as e:
             logger.error(f"Error updating progress for task {task_id}: {e}")
+        
+        # UPDATE DATABASE
+        update_scraping_session_safe(
+            task_id,
+            progress=progress,
+            message=message,
+            products_found=len(products) if products else 0
+        )
     
     try:
         update_progress(5, "Setting up Selenium browser with real HTML selectors...")
@@ -670,6 +837,9 @@ def run_kilimall_scraper(task_id, search_query, category_url, max_pages, scrape_
             
             logger.info(f"Task {task_id} completed successfully with {len(all_products)} products")
         
+        # Mark task as completed in database
+        complete_scraping_session_safe(task_id, all_products, 'completed')
+        
         # Mark task as completed
         with task_lock:
             if task_id in active_tasks and active_tasks[task_id]['status'] != 'stopped':
@@ -691,6 +861,9 @@ def run_kilimall_scraper(task_id, search_query, category_url, max_pages, scrape_
         threading.Timer(3600, cleanup_task).start()
         
     except Exception as e:
+        # Handle errors in database
+        complete_scraping_session_safe(task_id, [], 'failed', str(e))
+        
         # Handle errors
         error_msg = str(e)
         logger.error(f"Error in scraping task {task_id}: {error_msg}")
@@ -755,37 +928,43 @@ def get_results(task_id):
             'error': str(e)
         }), 500
 
+@app.route('/debug/test_db/<task_id>')
+def debug_test_db(task_id):
+    """Debug endpoint to test database updates"""
+    test_database_update(task_id)
+    return jsonify({'message': 'Check console for debug output'})
+
 if __name__ == '__main__':
-    print("🛒 Starting Kilimall Worker for WebExtract Pro...")
-    print("📡 Worker URL: http://127.0.0.1:5001")
-    print("🎨 Frontend: kilimall_frontend.html")
-    print("🔗 Connect via: WebExtract Pro Dashboard")
-    print("⚡ Optimized with proper HTML serving")
+    print("[KILIMALL] Starting Kilimall Worker for WebExtract Pro...")
+    print("[SERVER] Worker URL: http://127.0.0.1:5001")
+    print("[FRONTEND] Frontend: kilimall_frontend.html")
+    print("[CONNECT] Connect via: WebExtract Pro Dashboard")
+    print("[FAST] Optimized with proper HTML serving")
     
     # Check components
     if SCRAPER_AVAILABLE:
-        print("✅ Your Final Working Version KilimallScraper is loaded and ready")
-        print("✅ Selenium-based scraper with real HTML structure analysis")
-        print("✅ Enhanced Chrome driver with --headless=new")
-        print("✅ Correct search format: /search?keyword=")
-        print("✅ Phone-focused brand detection")
-        print("✅ Supports both search and category scraping")
-        print("✅ Browser automation for Vue.js sites")
-        print("⚡ Performance optimizations enabled")
+        print("[OK] Your Final Working Version KilimallScraper is loaded and ready")
+        print("[OK] Selenium-based scraper with real HTML structure analysis")
+        print("[OK] Enhanced Chrome driver with --headless=new")
+        print("[OK] Correct search format: /search?keyword=")
+        print("[OK] Phone-focused brand detection")
+        print("[OK] Supports both search and category scraping")
+        print("[OK] Browser automation for Vue.js sites")
+        print("[FAST] Performance optimizations enabled")
     else:
-        print("⚠️ KilimallScraper not found - make sure kilimall_scraper.py is in workers/kilimall/")
+        print("[WARN] KilimallScraper not found - make sure kilimall_scraper.py is in workers/kilimall/")
     
     if SHARED_DB_AVAILABLE:
-        print("✅ Database integration enabled")
+        print("[OK] Database integration enabled")
     else:
-        print("⚠️ Running in standalone mode (no database)")
+        print("[WARN] Running in standalone mode (no database)")
     
     frontend_path = os.path.join(current_dir, 'kilimall_frontend.html')
     if os.path.exists(frontend_path):
-        print("✅ kilimall_frontend.html found")
+        print("[OK] kilimall_frontend.html found")
     else:
-        print("⚠️ kilimall_frontend.html not found - using fallback interface")
+        print("[WARN] kilimall_frontend.html not found - using fallback interface")
     
-    print("🔧 HTML serving fix applied - should work with proper headers")
+    print("[CONFIG] HTML serving fix applied - should work with proper headers")
     
     app.run(host='127.0.0.1', port=5001, debug=False)

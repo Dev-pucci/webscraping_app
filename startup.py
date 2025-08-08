@@ -9,12 +9,12 @@ from pathlib import Path
 def print_banner():
     """Print startup banner"""
     print("=" * 60)
-    print("🚀 WEBEXTRACT PRO - PROFESSIONAL WEB SCRAPING PLATFORM")
+    print("[START] WEBEXTRACT PRO - PROFESSIONAL WEB SCRAPING PLATFORM")
     print("=" * 60)
-    print("📊 Main Dashboard: http://127.0.0.1:8000")
-    print("🛒 Kilimall Worker: http://127.0.0.1:5001") 
-    print("🛍️ Jumia Worker: http://127.0.0.1:5000")
-    print("👤 Admin Login: admin@webextract-pro.com / admin123")
+    print("[DASHBOARD] Main Dashboard: http://127.0.0.1:8000")
+    print("[KILIMALL] Kilimall Worker: http://127.0.0.1:5001") 
+    print("[JUMIA] Jumia Worker: http://127.0.0.1:5000")
+    print("[ADMIN] Admin Login: admin@webextract-pro.com / admin123")
     print("=" * 60)
     print()
 
@@ -33,7 +33,7 @@ def check_dependencies():
             missing_files.append(file)
     
     if missing_files:
-        print("❌ Missing required files:")
+        print("[ERROR] Missing required files:")
         for file in missing_files:
             print(f"   - {file}")
         print("\nPlease ensure all files are in the correct directories.")
@@ -44,7 +44,7 @@ def check_dependencies():
 def start_service(service_name, script_path, port, cwd=None):
     """Start a service in a separate process"""
     try:
-        print(f"🚀 Starting {service_name}...")
+        print(f"[START] Starting {service_name}...")
         
         # Use sys.executable to get the current Python interpreter
         process = subprocess.Popen(
@@ -64,13 +64,13 @@ def start_service(service_name, script_path, port, cwd=None):
             return process
         else:
             stdout, stderr = process.communicate()
-            print(f"❌ {service_name} failed to start:")
+            print(f"[ERROR] {service_name} failed to start:")
             print(f"   stdout: {stdout}")
             print(f"   stderr: {stderr}")
             return None
             
     except Exception as e:
-        print(f"❌ Error starting {service_name}: {str(e)}")
+        print(f"[ERROR] Error starting {service_name}: {str(e)}")
         return None
 
 def monitor_services(processes):
@@ -110,7 +110,7 @@ def main():
     
     # Check if we're in the right directory
     if not Path('shared_db.py').exists():
-        print("❌ Please run this script from the WebExtract Pro root directory")
+        print("[ERROR] Please run this script from the WebExtract Pro root directory")
         print("   (where shared_db.py is located)")
         return
     
@@ -118,7 +118,7 @@ def main():
     if not check_dependencies():
         return
     
-    print("🔧 Starting WebExtract Pro services...\n")
+    print("[CONFIG] Starting WebExtract Pro services...\n")
     
     # Store process references
     processes = {}
@@ -150,7 +150,7 @@ def main():
     failed_services = [name for name, process in processes.items() if process is None]
     
     if failed_services:
-        print(f"\n❌ Failed to start: {', '.join(failed_services)}")
+        print(f"\n[ERROR] Failed to start: {', '.join(failed_services)}")
         print("Please check the error messages above and fix any issues.")
         
         # Stop any services that did start

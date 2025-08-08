@@ -18,10 +18,10 @@ sys.path.insert(0, parent_dir)
 try:
     from shared_db import db, User, ScrapingSession, DatabaseManager
     SHARED_DB_AVAILABLE = True
-    print("✅ shared_db imported successfully")
+    print("[OK] shared_db imported successfully")
 except ImportError:
     SHARED_DB_AVAILABLE = False
-    print("⚠️ shared_db not available - running in standalone mode")
+    print("[WARN] shared_db not available - running in standalone mode")
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'webextract-pro-jumia-worker-2025'
@@ -31,9 +31,9 @@ CORS(app)
 if SHARED_DB_AVAILABLE:
     try:
         DatabaseManager.init_app(app)
-        print("✅ Database initialized")
+        print("[OK] Database initialized")
     except Exception as e:
-        print(f"⚠️ Database initialization failed: {e}")
+        print(f"[WARN] Database initialization failed: {e}")
         SHARED_DB_AVAILABLE = False
 
 # Import your existing scraper
@@ -44,15 +44,140 @@ try:
     # Import your JumiaScraper class
     from jumia_scraper import JumiaScraper
     SCRAPER_AVAILABLE = True
-    print("✅ JumiaScraper class imported successfully")
-    print("✅ Your trained requests-based scraper is ready")
+    print("[OK] JumiaScraper class imported successfully")
+    print("[OK] Your trained requests-based scraper is ready")
 except ImportError as e:
-    print(f"⚠️ Could not import JumiaScraper: {e}")
-    print("⚠️ Make sure jumia_scraper.py is in the workers/jumia/ directory")
+    print(f"[WARN] Could not import JumiaScraper: {e}")
+    print("[WARN] Make sure jumia_scraper.py is in the workers/jumia/ directory")
 
 # Active tasks storage
 active_tasks = {}
 task_history = []
+
+def create_scraping_session(user_id, worker_type, task_id, search_query=None, category_url=None):
+    """Create a new scraping session in the database"""
+    if not SHARED_DB_AVAILABLE:
+        return None
+    
+    try:
+        with app.app_context():  # Ensure we have app context
+            session = ScrapingSession(
+                user_id=user_id,
+                worker_type=worker_type,
+                task_id=task_id,
+                status='running',
+                search_query=search_query,
+                category_url=category_url,
+                progress=0,
+                message='Initializing...'
+            )
+            db.session.add(session)
+            db.session.commit()
+            
+            print(f"[OK] Created ScrapingSession record: {session.id} for task {task_id}")
+            return session
+    except Exception as e:
+        print(f"[ERROR] Error creating ScrapingSession: {e}")
+        db.session.rollback()
+        return None
+
+def update_scraping_session_safe(task_id, **kwargs):
+    """Thread-safe update function that creates its own app context"""
+    if not SHARED_DB_AVAILABLE:
+        return
+    
+    def do_update():
+        try:
+            session = ScrapingSession.query.filter_by(task_id=task_id).first()
+            if session:
+                # Only update fields that exist in the model
+                valid_fields = ['progress', 'message', 'products_found', 'pages_scraped', 'status']
+                
+                for key, value in kwargs.items():
+                    if key in valid_fields and hasattr(session, key):
+                        setattr(session, key, value)
+                        print(f"[OK] Setting {key} = {value} for task {task_id}")
+                
+                db.session.commit()
+                print(f"[OK] Updated ScrapingSession for task {task_id}")
+            else:
+                print(f"[ERROR] No session found for task_id: {task_id}")
+        except Exception as e:
+            print(f"[ERROR] Error updating ScrapingSession for task {task_id}: {e}")
+            try:
+                db.session.rollback()
+            except:
+                pass
+    
+    # Run the update with proper app context
+    with app.app_context():
+        do_update()
+
+def complete_scraping_session_safe(task_id, products_data, status='completed', error_message=None):
+    """Thread-safe completion function that creates its own app context"""
+    if not SHARED_DB_AVAILABLE:
+        return
+    
+    def do_complete():
+        try:
+            session = ScrapingSession.query.filter_by(task_id=task_id).first()
+            if session:
+                session.status = status
+                session.completed_at = datetime.utcnow()
+                session.progress = 100 if status == 'completed' else session.progress
+                
+                if products_data:
+                    session.products_found = len(products_data)
+                    # Convert products to JSON string
+                    if isinstance(products_data, list):
+                        session.products_data = json.dumps(products_data)
+                    else:
+                        session.products_data = str(products_data)
+                
+                if error_message:
+                    session.error_message = error_message
+                    session.message = f"Failed: {error_message}"
+                else:
+                    session.message = f"Completed successfully - {len(products_data) if products_data else 0} products"
+                
+                db.session.commit()
+                print(f"[OK] Completed ScrapingSession for task {task_id}: {status} with {len(products_data) if products_data else 0} products")
+            else:
+                print(f"[ERROR] No session found for task_id: {task_id}")
+        except Exception as e:
+            print(f"[ERROR] Error completing ScrapingSession for task {task_id}: {e}")
+            try:
+                db.session.rollback()
+            except:
+                pass
+    
+    # Run the completion with proper app context
+    with app.app_context():
+        do_complete()
+
+def test_database_update(task_id):
+    """Test function to verify database updates work"""
+    if not SHARED_DB_AVAILABLE:
+        print("Database not available")
+        return
+    
+    try:
+        with app.app_context():
+            session = ScrapingSession.query.filter_by(task_id=task_id).first()
+            if session:
+                print(f"Found session: {session.id}")
+                print(f"Current progress: {session.progress}")
+                print(f"Current message: {session.message}")
+                
+                # Test update
+                session.progress = 50
+                session.message = "Test update"
+                db.session.commit()
+                print("[OK] Test update successful")
+            else:
+                print(f"[ERROR] No session found for task_id: {task_id}")
+    except Exception as e:
+        print(f"[ERROR] Test update failed: {e}")
 
 @app.route('/')
 def home():
@@ -72,7 +197,7 @@ def home():
             </style>
         </head>
         <body>
-            <h1>🛍️ Jumia Worker - WebExtract Pro</h1>
+            <h1>[JUMIA] Jumia Worker - WebExtract Pro</h1>
             <div class="error">
                 <h3>Frontend File Missing</h3>
                 <p><strong>index.html</strong> not found in workers/jumia/ directory.</p>
@@ -80,8 +205,8 @@ def home():
             </div>
             <div class="info">
                 <h3>Worker Status</h3>
-                <p>✅ Jumia Worker is running on port 5000</p>
-                <p>{'✅ JumiaScraper loaded' if SCRAPER_AVAILABLE else '❌ JumiaScraper not found'}</p>
+                <p>[OK] Jumia Worker is running on port 5000</p>
+                <p>{'[OK] JumiaScraper loaded' if SCRAPER_AVAILABLE else '[ERROR] JumiaScraper not found'}</p>
                 <p>📊 <a href="/api/health" style="color: #ffff88;">Health Check</a></p>
             </div>
             <p><a href="http://127.0.0.1:8000/dashboard" style="color: #ffff88;">← Back to Dashboard</a></p>
@@ -152,6 +277,15 @@ def scrape_products():
                 'success': False,
                 'error': 'Please provide either search query or category URL'
             }), 400
+        
+        # CREATE DATABASE RECORD
+        create_scraping_session(
+            user_id=1,  # Default to admin user
+            worker_type='jumia',
+            task_id=task_id,
+            search_query=search_query,
+            category_url=category_url
+        )
         
         # Initialize task
         task_data = {
@@ -372,6 +506,14 @@ def run_jumia_scraper(task_id, search_query, category_url, max_pages, scrape_mod
                             task['products'] = products_dict
                             task['product_count'] = len(products_dict)
                             break
+            
+            # UPDATE DATABASE
+            update_scraping_session_safe(
+                task_id,
+                progress=progress,
+                message=message,
+                products_found=len(products) if products else 0
+            )
         
         update_progress(5, "Setting up HTTP session...")
         
@@ -415,6 +557,9 @@ def run_jumia_scraper(task_id, search_query, category_url, max_pages, scrape_mod
             all_products
         )
         
+        # Mark task as completed in database
+        complete_scraping_session_safe(task_id, all_products, 'completed')
+        
         # Mark task as completed
         if task_id in active_tasks and active_tasks[task_id]['status'] != 'stopped':
             active_tasks[task_id]['status'] = 'completed'
@@ -431,6 +576,9 @@ def run_jumia_scraper(task_id, search_query, category_url, max_pages, scrape_mod
         threading.Timer(7200, lambda: active_tasks.pop(task_id, None)).start()
         
     except Exception as e:
+        # Handle errors in database
+        complete_scraping_session_safe(task_id, [], 'failed', str(e))
+        
         # Handle errors
         error_msg = str(e)
         
@@ -505,30 +653,36 @@ def get_results(task_id):
             'error': str(e)
         }), 500
 
+@app.route('/debug/test_db/<task_id>')
+def debug_test_db(task_id):
+    """Debug endpoint to test database updates"""
+    test_database_update(task_id)
+    return jsonify({'message': 'Check console for debug output'})
+
 if __name__ == '__main__':
-    print("🛍️ Starting Jumia Worker for WebExtract Pro...")
-    print("📡 Worker URL: http://127.0.0.1:5000")
-    print("🎨 Frontend: index.html")
-    print("🔗 Connect via: WebExtract Pro Dashboard")
+    print("[JUMIA] Starting Jumia Worker for WebExtract Pro...")
+    print("[SERVER] Worker URL: http://127.0.0.1:5000")
+    print("[FRONTEND] Frontend: index.html")
+    print("[CONNECT] Connect via: WebExtract Pro Dashboard")
     
     # Check components
     if SCRAPER_AVAILABLE:
-        print("✅ Your existing JumiaScraper class is loaded and ready")
-        print("✅ Requests-based scraper with BeautifulSoup parsing")
-        print("✅ Supports both search and category scraping")
-        print("✅ Fast and efficient HTTP-based scraping")
+        print("[OK] Your existing JumiaScraper class is loaded and ready")
+        print("[OK] Requests-based scraper with BeautifulSoup parsing")
+        print("[OK] Supports both search and category scraping")
+        print("[OK] Fast and efficient HTTP-based scraping")
     else:
-        print("⚠️ JumiaScraper not found - make sure jumia_scraper.py is in workers/jumia/")
+        print("[WARN] JumiaScraper not found - make sure jumia_scraper.py is in workers/jumia/")
     
     if SHARED_DB_AVAILABLE:
-        print("✅ Database integration enabled")
+        print("[OK] Database integration enabled")
     else:
-        print("⚠️ Running in standalone mode (no database)")
+        print("[WARN] Running in standalone mode (no database)")
     
     frontend_path = os.path.join(current_dir, 'index.html')
     if os.path.exists(frontend_path):
-        print("✅ index.html found")
+        print("[OK] index.html found")
     else:
-        print("⚠️ index.html not found - using fallback interface")
+        print("[WARN] index.html not found - using fallback interface")
     
     app.run(host='127.0.0.1', port=5000, debug=True)

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kilimall Scraper</title>
+    <title>Kilimall Scraper - Clean Working Version</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -101,23 +101,29 @@
             </svg>
         );
 
+        const FilterIcon = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z" />
+            </svg>
+        );
+
         const API_BASE_URL = 'http://127.0.0.1:5001';
 
         const KilimallScraperApp = () => {
             const [searchQuery, setSearchQuery] = useState('');
             const [categoryUrl, setCategoryUrl] = useState('');
-            const [maxPages, setMaxPages] = useState(3);
+            const [maxPages, setMaxPages] = useState(1);
             const [searchType, setSearchType] = useState('search');
             const [error, setError] = useState('');
             
-            // Task management
+            // Task management - SIMPLIFIED like Jumia
             const [currentTask, setCurrentTask] = useState(null);
             const [taskStatus, setTaskStatus] = useState(null);
             const [products, setProducts] = useState([]);
             const [statistics, setStatistics] = useState(null);
             const [allTasks, setAllTasks] = useState([]);
             
-            // UI state
+            // UI state - SIMPLIFIED like Jumia
             const [isLoading, setIsLoading] = useState(false);
             const [showResults, setShowResults] = useState(false);
             const [activeTab, setActiveTab] = useState('scraper');
@@ -199,7 +205,7 @@
                             message: 'Starting scraper...'
                         });
                         
-                        // Start polling for task status
+                        // Start polling for task status - EXACTLY like Jumia
                         startPolling(data.task_id);
                     } else {
                         setError('Failed to start scraping task');
@@ -212,6 +218,7 @@
                 }
             };
 
+            // 🔥 COPIED FROM JUMIA - This is the working completion logic!
             const startPolling = (taskId) => {
                 if (pollIntervalRef.current) {
                     clearInterval(pollIntervalRef.current);
@@ -228,6 +235,7 @@
                         const data = await response.json();
                         setTaskStatus(data);
 
+                        // 🔥 JUMIA'S WORKING COMPLETION LOGIC - Simple and clean!
                         if (data.status === 'completed') {
                             setProducts(data.products || []);
                             calculateStatistics(data.products || []);
@@ -462,7 +470,7 @@
                                 </div>
                                 <div>
                                     <h1 className="text-3xl font-bold text-white">Kilimall Scraper</h1>
-                                    <p className="text-blue-100 mt-1">Extract product data from Kilimall Kenya</p>
+                                    <p className="text-blue-100 mt-1">Using Jumia's working completion logic!</p>
                                 </div>
                             </div>
                         </div>
@@ -522,6 +530,7 @@
                                                             : 'text-gray-600 hover:text-blue-600'
                                                     }`}
                                                 >
+                                                    <FilterIcon />
                                                     <span>Category</span>
                                                 </button>
                                             </div>
@@ -569,15 +578,17 @@
                                                 <input
                                                     type="number"
                                                     value={maxPages}
-                                                    onChange={(e) => setMaxPages(parseInt(e.target.value))}
+                                                    onChange={(e) => setMaxPages(parseInt(e.target.value) || 1)}
                                                     min="1"
-                                                    max="10"
+                                                    max="3"
                                                     className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                                                 />
                                                 <p className="text-sm text-gray-500 mt-2">
-                                                    More pages = more products but longer scraping time
+                                                    Recommended: 1 page for testing
                                                 </p>
                                             </div>
+
+                                           
                                         </div>
                                     </div>
 
@@ -587,7 +598,7 @@
                                         </div>
                                     )}
 
-                                    {/* Progress Bar */}
+                                    {/* Progress Bar - SIMPLIFIED like Jumia */}
                                     {isLoading && taskStatus && (
                                         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
                                             <div className="flex items-center justify-between mb-2">
@@ -650,7 +661,7 @@
                                     </div>
                                 </div>
 
-                                {/* Statistics */}
+                                {/* Statistics - EXACTLY like Jumia */}
                                 {statistics && showResults && (
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                                         <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
@@ -703,7 +714,7 @@
                                     </div>
                                 )}
 
-                                {/* Top Brands */}
+                                {/* Top Brands - EXACTLY like Jumia */}
                                 {statistics && statistics.topBrands.length > 0 && showResults && (
                                     <div className="bg-white rounded-xl shadow-lg p-6 mb-8 border border-gray-100">
                                         <h3 className="text-xl font-bold text-gray-900 mb-6">Top Brands Found</h3>
@@ -718,7 +729,7 @@
                                     </div>
                                 )}
 
-                                {/* Products Grid */}
+                                {/* Products Grid - EXACTLY like Jumia */}
                                 {products.length > 0 && showResults && (
                                     <div>
                                         <div className="flex items-center justify-between mb-8">
@@ -735,15 +746,18 @@
                                     </div>
                                 )}
 
-                                {/* Empty State */}
+                                {/* Empty State - EXACTLY like Jumia */}
                                 {!isLoading && products.length === 0 && !showResults && (
                                     <div className="text-center py-16">
                                         <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md mx-auto">
-                                            <ShoppingBagIcon />
+                                            <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-6">
+                                                <ShoppingBagIcon />
+                                            </div>
                                             <h3 className="text-xl font-semibold text-gray-900 mb-3">Ready to Scrape</h3>
                                             <p className="text-gray-600 mb-6">Enter a search term or select a category to start scraping products from Kilimall Kenya</p>
                                             <div className="text-sm text-gray-500">
                                                 <p>Popular searches: smart tv, bluetooth speaker, laptop, phone</p>
+                                                <p className="mt-2">✅ Using Jumia's proven completion logic!</p>
                                             </div>
                                         </div>
                                     </div>
@@ -774,7 +788,9 @@
                                 ) : (
                                     <div className="text-center py-16">
                                         <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md mx-auto">
-                                            <ClockIcon />
+                                            <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+                                                <ClockIcon />
+                                            </div>
                                             <h3 className="text-xl font-semibold text-gray-900 mb-3">No Tasks Yet</h3>
                                             <p className="text-gray-600">Start a scraping task to see it listed here</p>
                                         </div>
@@ -787,6 +803,7 @@
             );
         };
 
+        // Use React 18 render method
         ReactDOM.render(React.createElement(KilimallScraperApp), document.getElementById('root'));
     </script>
 </body>

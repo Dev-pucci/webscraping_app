@@ -108,7 +108,7 @@ class DatabaseManager:
             admin.set_password('admin123')
             db.session.add(admin)
             db.session.commit()
-            print("✅ Admin user created: admin@webextract-pro.com / admin123")
+            print("[OK] Admin user created: admin@webextract-pro.com / admin123")
     
     @staticmethod
     def get_user_stats(user_id):
